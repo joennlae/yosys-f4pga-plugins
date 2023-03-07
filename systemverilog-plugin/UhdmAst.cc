@@ -343,6 +343,10 @@ static void resolve_wiretype(AST::AstNode *wire_node)
         }
     }
     AST::AstNode *wiretype_ast = nullptr;
+    printf("wiretype_node->str %s, %s\n", wiretype_node->str.c_str(), wiretype_node->loc_string().c_str());
+    for (auto it = AST_INTERNAL::current_scope.begin(); it != AST_INTERNAL::current_scope.end(); it++) {
+      printf("current scope %s \n", it->first.c_str());
+    }
     log_assert(AST_INTERNAL::current_scope.count(wiretype_node->str));
     wiretype_ast = AST_INTERNAL::current_scope[wiretype_node->str];
     // we need to setup current top ast as this simplify
@@ -594,6 +598,10 @@ static AST::AstNode *expand_dot(const AST::AstNode *current_struct, const AST::A
 {
     AST::AstNode *current_struct_elem = nullptr;
     auto search_str = search_node->str.find("\\") == 0 ? search_node->str.substr(1) : search_node->str;
+    printf("all children %s\n", current_struct->str.c_str());
+    for (auto c : current_struct->children){
+      printf("child: %s\n", c->str.c_str());
+    }
     auto struct_elem_it =
       std::find_if(current_struct->children.begin(), current_struct->children.end(), [&](AST::AstNode *node) { return node->str == search_str; });
     if (struct_elem_it == current_struct->children.end()) {
@@ -1850,6 +1858,7 @@ void UhdmAst::process_module()
     sanitize_symbol_name(name);
     type = strip_package_name(type);
     name = strip_package_name(name);
+    printf("init package %s\n", name.c_str());
     if (!is_module_instance) {
         if (shared.top_nodes.find(type) != shared.top_nodes.end()) {
             current_node = shared.top_nodes[type];
@@ -3793,7 +3802,7 @@ void UhdmAst::process_tagged_pattern()
         lhs_node = assign_node->children[0];
     } else {
         lhs_node = new AST::AstNode(AST::AST_IDENTIFIER);
-        auto ancestor = find_ancestor({AST::AST_WIRE, AST::AST_MEMORY, AST::AST_PARAMETER, AST::AST_LOCALPARAM});
+        auto ancestor = find_ancestor({AST::AST_WIRE, AST::AST_MEMORY, AST::AST_PARAMETER, AST::AST_LOCALPARAM, AST::AST_WIRETYPE});
         if (!ancestor) {
             log_error("Couldn't find ancestor for tagged pattern!\n");
         }
@@ -4096,6 +4105,7 @@ void UhdmAst::process_port()
         vpiHandle actual_h = vpi_handle(vpiActual, lowConn_h);
         auto actual_type = vpi_get(vpiType, actual_h);
         switch (actual_type) {
+        case vpiInterfaceArray:
         case vpiModport: {
             vpiHandle iface_h = vpi_handle(vpiInterface, actual_h);
             if (iface_h) {
@@ -4113,6 +4123,8 @@ void UhdmAst::process_port()
                 // Skip '\' in cellName
                 typeNode->str = ifaceName + '.' + cellName.substr(1, cellName.length());
                 current_node->children.push_back(typeNode);
+                // vpiInterfaceArray
+                visit_one_to_many({vpiRange}, actual_h, [&](AST::AstNode *node) { packed_ranges.push_back(node); });
                 shared.report.mark_handled(actual_h);
                 shared.report.mark_handled(iface_h);
                 vpi_release_handle(iface_h);
@@ -4259,6 +4271,11 @@ void UhdmAst::process_parameter()
         case vpiLogicTypespec: {
             current_node->is_logic = true;
             visit_one_to_many({vpiRange}, typespec_h, [&](AST::AstNode *node) { packed_ranges.push_back(node); });
+            visit_one_to_one({vpiTypespec}, obj_h, [&](AST::AstNode *node) {
+                auto it = shared.param_types.find(current_node->str);
+                if (it == shared.param_types.end())
+                    shared.param_types.insert(std::make_pair(current_node->str, node));
+            });
             shared.report.mark_handled(typespec_h);
             break;
         }
@@ -4465,9 +4482,9 @@ AST::AstNode *UhdmAst::process_object(vpiHandle obj_handle)
         }
     }
 
-    if (shared.debug_flag) {
-        std::cout << indent << "Object '" << object->VpiName() << "' of type '" << UHDM::VpiTypeName(obj_h) << '\'' << std::endl;
-    }
+    // if (shared.debug_flag) {
+    std::cout << indent << "Object '" << object->VpiName() << "' of type '" << object_type << " " << UHDM::VpiTypeName(obj_h) << " L:" << object->VpiLineNo() << '\'' << std::endl;
+    // }
 
     switch (object_type) {
     case vpiDesign:
@@ -4723,6 +4740,13 @@ AST::AstNode *UhdmAst::process_object(vpiHandle obj_handle)
         process_unsupported_stmt(object);
         break;
     case vpiTypeParameter:
+        visit_one_to_one({vpiTypespec, vpiStructTypespec}, obj_h, [&](AST::AstNode *node) {
+            if (node) {
+                auto ast_node = make_ast_node(AST::AST_TYPEDEF);
+                ast_node->children.push_back(node);
+                current_node = ast_node;
+            }
+        });
         // Instances in an `uhdmTopModules` tree already have all parameter references
         // substituted with the parameter type/value by Surelog,
         // so the plugin doesn't need to process the parameter itself.
