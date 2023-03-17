@@ -24,6 +24,8 @@ class UhdmAst
     // ChildrenNodeTypes that are present in the given object.
     void visit_one_to_one(const std::vector<int> child_node_types, vpiHandle parent_handle, const std::function<void(::Yosys::AST::AstNode *)> &f);
 
+    void visit_one_to_two_levels(int child_node_type_level1, const std::vector<int> child_node_types, vpiHandle parent_handle, const std::function<void(::Yosys::AST::AstNode *)> &f);
+
     // Visit children of type vpiRange that belong to the given parent node.
     void visit_range(vpiHandle obj_h, const std::function<void(::Yosys::AST::AstNode *)> &f);
 
@@ -128,6 +130,7 @@ class UhdmAst
     void process_return();
     void process_function();
     void process_logic_var();
+    void process_logic_var_typespec();
     void process_sys_func_call();
     // use for task calls and function calls
     void process_tf_call(::Yosys::AST::AstNodeType type);

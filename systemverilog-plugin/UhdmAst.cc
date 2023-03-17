@@ -188,6 +188,42 @@ static void visitEachDescendant(AST::AstNode *node, const std::function<void(AST
     }
 }
 
+static void visitEachDescendantIdentifier(AST::AstNode *node, std::unordered_set<std::string> &identifiers, const std::function<void(AST::AstNode *, std::unordered_set<std::string> &)> &f)
+{
+    for (auto child : node->children) {
+        f(child, identifiers);
+        visitEachDescendantIdentifier(child, identifiers, f);
+    }
+}
+
+static void check_range_for_identifier(AST::AstNode *node, std::unordered_set<std::string> &identifiers)
+{
+    if (node->attributes.count(UhdmAst::packed_ranges())) {
+        for (auto r : node->attributes[UhdmAst::packed_ranges()]->children) {
+            visitEachDescendantIdentifier(r, identifiers, [](AST::AstNode *node, std::unordered_set<std::string> &identifiers) {
+                if (node->type == AST::AST_IDENTIFIER) {
+                    // printf("Identifier packed %s\n", node->str.c_str());
+                    identifiers.insert(node->str);
+                }
+            });
+        }
+    }
+    if (node->attributes.count(UhdmAst::unpacked_ranges())) {
+        for (auto r : node->attributes[UhdmAst::unpacked_ranges()]->children) {
+            visitEachDescendantIdentifier(r, identifiers, [](AST::AstNode *node, std::unordered_set<std::string> &identifiers) {
+                if (node->type == AST::AST_IDENTIFIER) {
+                    // printf("Identifier unpacked %s\n, ", node->str.c_str());
+                    identifiers.insert(node->str);
+                }
+            });
+        }
+    }
+    // if (node->type == AST::AST_IDENTIFIER) {
+    //     printf("Identifier found %s\n", node->str.c_str());
+    //     identifiers.insert(node->str);
+    // }
+}
+
 static void add_multirange_wire(AST::AstNode *node, std::vector<AST::AstNode *> packed_ranges, std::vector<AST::AstNode *> unpacked_ranges,
                                 bool reverse = true)
 {
@@ -342,17 +378,75 @@ static void resolve_wiretype(AST::AstNode *wire_node)
             unpacked_ranges.push_back(r->clone());
         }
     }
+    // AST::AstNode *wiretype_ast_base = nullptr;
     AST::AstNode *wiretype_ast = nullptr;
-    printf("wiretype_node->str %s, %s\n", wiretype_node->str.c_str(), wiretype_node->loc_string().c_str());
-    for (auto it = AST_INTERNAL::current_scope.begin(); it != AST_INTERNAL::current_scope.end(); it++) {
-      printf("current scope %s \n", it->first.c_str());
+    // for (auto it = AST_INTERNAL::current_scope.begin(); it != AST_INTERNAL::current_scope.end(); it++) {
+    //   printf("current scope %s \n", it->first.c_str());
+    // }
+    printf("wiretype_node->str %s, %s, %s\n", wire_node->str.c_str(), wiretype_node->str.c_str(), wiretype_node->loc_string().c_str());
+    if (wiretype_node->str == "\\req_t") {
+      printf("crisissisisisis\n");
     }
     log_assert(AST_INTERNAL::current_scope.count(wiretype_node->str));
     wiretype_ast = AST_INTERNAL::current_scope[wiretype_node->str];
-    // we need to setup current top ast as this simplify
-    // needs to have access to all already defined ids
-    while (wire_node->simplify(true, false, false, 1, -1, false, false)) {
-    }
+    auto wiretype_ast_clone = wiretype_ast->clone();
+    // wiretype_ast = wiretype_ast_base;
+    // // wiretype_ast = wiretype_ast_base->clone();
+    // std::string original_name = wiretype_node->str;
+    // std::string wiretype_copy_name = original_name + "_copied";
+    // if (AST_INTERNAL::current_scope.count(wiretype_copy_name)) {
+    //     wiretype_copy_name = wiretype_copy_name + std::to_string(AST_INTERNAL::current_scope.size());
+    // }
+    // printf("copied name %s\n", wiretype_copy_name.c_str());
+    // wiretype_ast_base->str = wiretype_copy_name;
+    // AST_INTERNAL::current_scope[wiretype_copy_name] = wiretype_ast_base;
+    // wiretype_node->str = wiretype_copy_name;
+    // wire_node->children[0]->str = wiretype_copy_name;
+    // if (AST_INTERNAL::current_scope.at(wiretype_node->str)->type != AST::AST_TYPEDEF) {
+    //     printf("already simplified wiretype_node %s\n", wiretype_node->str.c_str());
+    // } else {
+      // we need to setup current top ast as this simplify
+      // needs to have access to all already defined ids
+    // printf("wiretype_node->type before %d \n", wiretype_ast->type);
+    // // while (wiretype_ast->children[0]->simplify(true, false, false, 1, -1, false, false)) {};
+    // printf("wiretype_node->type after %d \n", wiretype_ast->type);
+    // auto checker = AST_INTERNAL::current_scope[wiretype_node->str];
+    // std::string generated_string = wiretype_node->str + "_unique_" + std::to_string(AST_INTERNAL::current_scope.size());
+    // wiretype_node->str = generated_string;
+    // wire_node->children[0]->str = generated_string;
+    // wiretype_ast->str = generated_string;
+    // AST_INTERNAL::current_scope[generated_string] = wiretype_ast;
+    printf("wiretype_node->type before %d \n", wiretype_ast->type);
+    // bool used_backup = false;
+    // if (wiretype_ast->type != AST::AST_TYPEDEF) {
+    //   printf("OTHER TYPE %s\n", wiretype_node->str.c_str());
+    //   if (AST_INTERNAL::current_scope.count(wiretype_node->str + "_backup")) {
+    //     wiretype_ast = AST_INTERNAL::current_scope[wiretype_node->str + "_backup"];
+    //     AST_INTERNAL::current_scope[wiretype_node->str] = wiretype_ast;
+    //     used_backup = true;
+    //     printf("load backup %d\n", wiretype_ast->type);
+    //   }
+    // }
+    while (wire_node->simplify(true, false, false, 1, -1, false, false)) {}
+    // auto new_wiretype_ast = AST_INTERNAL::current_scope[wiretype_ast_clone->str];
+    AST_INTERNAL::current_scope[wiretype_ast_clone->str] = wiretype_ast_clone;
+    // if (!used_backup && new_wiretype_ast) {
+    //   printf("save backup %d, %s\n", wiretype_ast_clone->type, wiretype_ast_clone->str.c_str());
+    //   AST_INTERNAL::current_scope[wiretype_ast_clone->str + "_backup"] = wiretype_ast_clone;
+    // } else if (new_wiretype_ast == nullptr) {
+    //   AST_INTERNAL::current_scope[wiretype_ast_clone->str + "_backup"] = wiretype_ast_clone;
+    //   printf("save backup %d, %s\n", wiretype_ast_clone->type, wiretype_ast_clone->str.c_str());
+    // } else
+    // {
+    //   delete wiretype_ast_clone;
+    // }
+    // if (AST_INTERNAL::current_scope[wiretype_node->str]->type != AST::AST_TYPEDEF) {
+    //   AST_INTERNAL::current_scope[wiretype_node->str] = wiretype_ast;
+    // }
+    // }
+    auto checker = AST_INTERNAL::current_scope[wiretype_ast_clone->str];
+    if (checker)
+      printf("wiretype_node->type after %d \n", checker->type);
     if (wiretype_ast->children[0]->type == AST::AST_STRUCT && wire_node->type == AST::AST_WIRE) {
         auto struct_width = get_max_offset_struct(wiretype_ast->children[0]);
         wire_node->range_left = struct_width;
@@ -401,6 +495,8 @@ static void resolve_wiretype(AST::AstNode *wire_node)
                                                                                unpacked_ranges.begin(), unpacked_ranges.end());
         }
     }
+    // AST_INTERNAL::current_scope[wiretype_node->str] = wiretype_ast;
+    // wire_node->children[0]->str = original_name;
 }
 
 static void add_force_convert_attribute(AST::AstNode *wire_node, uint32_t val = 1)
@@ -589,7 +685,6 @@ static void convert_packed_unpacked_range(AST::AstNode *wire_node)
         wire_node->attributes.erase(UhdmAst::packed_ranges());
         wire_node->attributes.erase(UhdmAst::unpacked_ranges());
     }
-
     // Insert new range
     wire_node->children.insert(wire_node->children.end(), ranges.begin(), ranges.end());
 }
@@ -773,6 +868,10 @@ static void setup_current_scope(std::unordered_map<std::string, AST::AstNode *> 
     }
     for (auto &o : current_top_node->children) {
         if (o->type == AST::AST_TYPEDEF || o->type == AST::AST_PARAMETER || o->type == AST::AST_LOCALPARAM) {
+            printf("add %s to scope\n", o->str.c_str());
+            if (AST_INTERNAL::current_scope.count(o->str)) {
+              log_warning("multiple typedefs for %s, %d, %d\n", o->str.c_str(), o->type, AST_INTERNAL::current_scope[o->str]->type);
+            }
             AST_INTERNAL::current_scope[o->str] = o;
         } else if (o->type == AST::AST_ENUM) {
             AST_INTERNAL::current_scope[o->str] = o;
@@ -1100,6 +1199,7 @@ static void simplify(AST::AstNode *current_node, AST::AstNode *parent_node)
     case AST::AST_STRUCT:
     case AST::AST_UNION:
         simplify_struct(current_node, 0, parent_node);
+        printf("simplify struct %s, parent %s\n", current_node->str.c_str(), parent_node ? parent_node->str.c_str() : "");
         // instance rather than just a type in a typedef or outer struct?
         if (!current_node->str.empty() && current_node->str[0] == '\\') {
             // instance so add a wire for the packed structure
@@ -1197,6 +1297,24 @@ void UhdmAst::visit_one_to_one(const std::vector<int> child_node_types, vpiHandl
         }
         vpi_release_handle(itr);
     }
+}
+
+void UhdmAst::visit_one_to_two_levels(int child_node_type_level1, const std::vector<int> child_node_types, vpiHandle parent_handle, const std::function<void(AST::AstNode *)> &f)
+{
+    vpiHandle first_level = vpi_iterate(child_node_type_level1, parent_handle);
+    while (vpiHandle vpi_child_obj = vpi_scan(first_level)) {
+        for (auto child : child_node_types) {
+            vpiHandle itr = vpi_handle(child, vpi_child_obj);
+            if (itr) {
+                UhdmAst uhdm_ast(this, shared, indent + "  ");
+                auto *child_node = uhdm_ast.process_object(itr);
+                f(child_node);
+            }
+            vpi_release_handle(itr);
+        }
+        vpi_release_handle(vpi_child_obj);
+    }
+    vpi_release_handle(first_level);
 }
 
 void UhdmAst::visit_range(vpiHandle obj_h, const std::function<void(AST::AstNode *)> &f)
@@ -1696,15 +1814,35 @@ void UhdmAst::move_type_to_new_typedef(AST::AstNode *current_node, AST::AstNode 
     typedef_node->location = type_node->location;
     typedef_node->filename = type_node->filename;
     typedef_node->str = strip_package_name(type_node->str);
+    bool isReplace = false;
+    AST::AstNode *replaceNode = nullptr;
     for (auto c : current_node->children) {
         if (c->str == typedef_node->str) {
-            return;
+            log_assert(c->children[0]);
+            if (c->children[0]->type < type_node->type) {
+              if (type_node->type == AST::AST_ENUM && type_node->attributes.count("\\enum_base_type") == 0) {
+                // redefine enum we can skip
+                return;
+              }
+              // replace type used for parameter propagation
+              isReplace = true;
+              replaceNode = c;
+              printf("Info: will be replacing type %s, %d, new %d\n", c->str.c_str(), c->children[c->children.size() - 1]->type, type_node->type);
+              continue;
+            } else {
+              // assume it the same, maybe add warning for type parameter propagation through hierarchy
+              return;
+            }
         }
     }
     if (type_node->type == AST::AST_STRUCT) {
         type_node->str.clear();
         typedef_node->children.push_back(type_node);
-        current_node->children.push_back(typedef_node);
+        if (isReplace) {
+          *replaceNode = *typedef_node;
+        } else {
+          current_node->children.push_back(typedef_node);
+        }
     } else if (type_node->type == AST::AST_ENUM) {
         if (type_node->attributes.count("\\enum_base_type")) {
             auto base_type = type_node->attributes["\\enum_base_type"];
@@ -1725,6 +1863,11 @@ void UhdmAst::move_type_to_new_typedef(AST::AstNode *current_node, AST::AstNode 
             }
             typedef_node->children.push_back(wire_node);
             current_node->children.push_back(typedef_node);
+            if (isReplace) {
+              *replaceNode = *typedef_node;
+            } else {
+              current_node->children.push_back(typedef_node);
+            }
             delete type_node;
         } else {
             type_node->str = "$enum" + std::to_string(shared.next_enum_id());
@@ -1739,12 +1882,20 @@ void UhdmAst::move_type_to_new_typedef(AST::AstNode *current_node, AST::AstNode 
             }
             typedef_node->children.push_back(wire_node);
             current_node->children.push_back(type_node);
-            current_node->children.push_back(typedef_node);
+            if (isReplace) {
+              *replaceNode = *typedef_node;
+            } else {
+              current_node->children.push_back(typedef_node);
+            }
         }
     } else {
         type_node->str.clear();
         typedef_node->children.push_back(type_node);
-        current_node->children.push_back(typedef_node);
+        if (isReplace) {
+          *replaceNode = *typedef_node;
+        } else {
+          current_node->children.push_back(typedef_node);
+        }
     }
 }
 
@@ -1928,6 +2079,13 @@ void UhdmAst::process_module()
                 delete node;
             }
         });
+
+        // adding type parameter name to instantiated module name
+        visit_one_to_two_levels(vpiParameter, {vpiTypespec}, obj_h, [&](AST::AstNode *node) {
+            if (node) {
+                module_parameters += "\\" + node->str;
+            }
+        });
         // rename module in same way yosys do
         std::string module_name;
         if (module_parameters.size() > 60)
@@ -2013,11 +2171,67 @@ void UhdmAst::process_module()
         current_node->children.insert(current_node->children.begin(), typeNode);
         auto old_top = shared.current_top_node;
         shared.current_top_node = module_node;
+        shared.elaborated_nodes.push_back(old_top);
+
+        printf("elaboration depth %d\n", shared.elaborated_nodes.size());
+
+        std::unordered_set<std::string> visited_identifiers;
+        visitEachDescendant(module_node, [&](AST::AstNode *current_scope_node) {
+            check_range_for_identifier(current_scope_node, visited_identifiers);
+        });
+
+        visit_one_to_two_levels(vpiParameter, {vpiTypespec}, obj_h, [&](AST::AstNode *node) {
+            if (node && node->str.size()) {
+                move_type_to_new_typedef(module_node, node);
+            }
+        });
+
+        // vpiVariables need to be checked after vpiParameter as they are processed in that order and pointers are swapped in surelog
+        visit_one_to_two_levels(vpiVariables, {vpiTypespec}, obj_h, [&](AST::AstNode *node) {
+            if (node && node->str.size()) {
+                move_type_to_new_typedef(module_node, node);
+            }
+        });
+
+        visitEachDescendant(module_node, [&](AST::AstNode *current_scope_node) {
+            check_range_for_identifier(current_scope_node, visited_identifiers);
+        });
+
+        for (auto ident: visited_identifiers) {
+            printf("ident %s\n", ident.c_str());
+        }
+        visitEachDescendant(module_node, [&](AST::AstNode *current_scope_node) {
+            if (visited_identifiers.count(current_scope_node->str) > 0) {
+                // identifier is already defined in this scope does not need to be copied
+                visited_identifiers.erase(current_scope_node->str);
+            }
+        });
+
+        if (visited_identifiers.size() > 0){
+            // couldn't copy all identifiers copied
+            for (int i = shared.elaborated_nodes.size() - 1; i >= 0; i--) {
+                // trying to copy from elaborated nodes before hand
+                auto parent_of_parent = shared.elaborated_nodes.at(i);
+                visitEachDescendant(parent_of_parent, [&](AST::AstNode *current_scope_node) {
+                    if (visited_identifiers.count(current_scope_node->str) > 0) {
+                        // copy identifier and replace
+                        visited_identifiers.erase(current_scope_node->str);
+                        add_or_replace_child(module_node, current_scope_node->clone());
+                    }
+                });
+                if (visited_identifiers.size() == 0) {
+                    break;
+                }
+            }
+        }
+        log_assert(visited_identifiers.size() == 0);
+
         visit_one_to_many({vpiVariables, vpiNet, vpiArrayNet}, obj_h, [&](AST::AstNode *node) {
             if (node) {
                 add_or_replace_child(module_node, node);
             }
         });
+
         visit_one_to_many({vpiInterface, vpiModule, vpiPort, vpiGenScopeArray, vpiContAssign, vpiTaskFunc}, obj_h, [&](AST::AstNode *node) {
             if (node) {
                 add_or_replace_child(module_node, node);
@@ -2025,6 +2239,7 @@ void UhdmAst::process_module()
         });
         make_cell(obj_h, current_node, module_node);
         shared.current_top_node = old_top;
+        shared.elaborated_nodes.pop_back();
     }
 }
 
@@ -4482,9 +4697,9 @@ AST::AstNode *UhdmAst::process_object(vpiHandle obj_handle)
         }
     }
 
-    // if (shared.debug_flag) {
+    if (shared.debug_flag) {
     std::cout << indent << "Object '" << object->VpiName() << "' of type '" << object_type << " " << UHDM::VpiTypeName(obj_h) << " L:" << object->VpiLineNo() << '\'' << std::endl;
-    // }
+    }
 
     switch (object_type) {
     case vpiDesign:
@@ -4740,13 +4955,14 @@ AST::AstNode *UhdmAst::process_object(vpiHandle obj_handle)
         process_unsupported_stmt(object);
         break;
     case vpiTypeParameter:
-        visit_one_to_one({vpiTypespec, vpiStructTypespec}, obj_h, [&](AST::AstNode *node) {
+        visit_one_to_one({vpiTypespec}, obj_h, [&](AST::AstNode *node) {
             if (node) {
-                auto ast_node = make_ast_node(AST::AST_TYPEDEF);
-                ast_node->children.push_back(node);
-                current_node = ast_node;
+                current_node = make_ast_node(AST::AST_TYPEDEF);
+                current_node->children.push_back(node);
             }
         });
+        // type will be replaced later but needed for module init
+
         // Instances in an `uhdmTopModules` tree already have all parameter references
         // substituted with the parameter type/value by Surelog,
         // so the plugin doesn't need to process the parameter itself.
